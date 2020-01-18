@@ -68,3 +68,5 @@ POST on /api/users/register - Sat Jan 18 2020 12:08:07 GMT-0800 (Pacific Standar
 POST on /api/users/register - Sat Jan 18 2020 12:09:12 GMT-0800 (Pacific Standard Time)
 POST on /api/users/register - Sat Jan 18 2020 12:09:29 GMT-0800 (Pacific Standard Time)
 GET on /api/users/register - Sat Jan 18 2020 12:10:02 GMT-0800 (Pacific Standard Time)
+GET on / - Sat Jan 18 2020 12:18:21 GMT-0800 (Pacific Standard Time)
+GET on /favicon.ico - Sat Jan 18 2020 12:18:21 GMT-0800 (Pacific Standard Time)

@@ -13,8 +13,11 @@
     "mysql2": "^2.1.0",
     "uuid": "^3.4.0"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "nodemon": "^2.0.2"
+  },
   "scripts": {
+    "start": "nodemon index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
