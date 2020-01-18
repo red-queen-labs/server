@@ -1,4 +1,5 @@
 const express = require('express');
+const bodyParser = require('body-parser');
 const expSession = require('express-session');
 const sessionStore = require('express-mysql-session');
 
@@ -15,7 +16,7 @@ require('dotenv').config();
 const app = express();
 
 var dbManager = new DatabaseManager();
-
+app.use(express.urlencoded({extended: true}));
 app.use(async (req, res, next) => {
 	
 	let log = `${req.method} on ${req.url} - ${new Date()}`;
@@ -29,8 +30,8 @@ app.use(async (req, res, next) => {
 
 // Expected body: {id, email, password_hash, firstName, lastName}
 app.post('/api/users/register', async (req, res) => {
-	console.log('body: ' + req.body);
-	console.log('data: ' +req.data);
+
+	console.log(req.body)
 	await dbManager.query(`INSERT INTO users VALUES ("?", "?", "?");`, [req.body.id, req.body.email, req.body.password_hash])
 		.catch(res.send);
 	await dbManager.query(`INSERT INTO profiles VALUES ("?", "?", "?");`, [req.body.id, req.body.firstName, req.body.lastName])
