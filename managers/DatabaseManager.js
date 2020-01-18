@@ -41,8 +41,9 @@ module.exports = class DatabaseManager {
 	// Query the DB, returns rows.
 	async query (query, valuesToInject = []) {
 		if (!this.connected) return Promise.reject('Not connected to the server - cannot perform query on db.');
-		
-		const [rows, fields] = await this.pool.execute(query, valuesToInject).catch(e => console.log(`DatabaseManager.query("${query}") - QUERY FAILED: ${e}`));
+console.log(valuesToInject.length)
+		const [rows, fields] = valuesToInject.length > 0 ? await this.pool.execute(query, valuesToInject).catch(e => console.log(`DatabaseManager.query("${query}") - QUERY FAILED: ${e}`))
+		: await this.pool.execute(query).catch(e => console.log(`DatabaseManager.query("${query}") - QUERY FAILED: ${e}`));
 		return rows;
 	}
 }
