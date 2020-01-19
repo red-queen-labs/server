@@ -123,7 +123,8 @@ app.post('/api/profiles/unsave/building', auth, async (req, res) => {
 app.post('/api/img-lookup', async (req, res) => {
 
 	if (!req.body) return res.sendStatus(400);
-	res.status(200).send(req.body)
+	
+	res.sendStatus(200);
 	//get housing info from the db and send back
 });
 
