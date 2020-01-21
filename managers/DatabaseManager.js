@@ -8,6 +8,7 @@ module.exports = class DatabaseManager {
 		this.connected = false;
 		this.newConnectionPool(database).then(() => {
 			this.registerListeners();
+			console.log(`Connected to DB ${database}.`);
 		});
 	}
 
@@ -22,11 +23,6 @@ module.exports = class DatabaseManager {
 			charset: 'utf8mb4'
 		});
 		this.connected = true;
-		// this.pool.getConnection().then(conn => {
-		// 	const res = conn.query('select foo from bar');
-		// 	conn.release();
-		// 	return res;
-		// });
 	}
 
 	async registerListeners () {
@@ -47,5 +43,3 @@ module.exports = class DatabaseManager {
 		return rows;
 	}
 }
-//[ BinaryRow { '? + ?': 4 } ]
-// [ BinaryRow { '4': 4 } ]

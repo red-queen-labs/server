@@ -12,7 +12,7 @@ require('dotenv').config();
 
 const app = express();
 
-let userDB = new DatabaseManager(process.env.DBUSERS);
+let sessionDB = new DatabaseManager(process.env.DBUSERS);
 let pipelineDB = new DatabaseManager(process.env.DBPIPELINE);
 
 app.use(express.json({ extended: true }));
@@ -20,7 +20,7 @@ app.use(async (req, res, next) => {
 	newServerLog(`${req.method} on ${req.url} - ${new Date()}`);
 	next();
 });
-app.use('/', (req, res) => res.sendStatus(200));
+app.get('/', (req, res) => res.sendStatus(200));
 // app.use(express.static(__dirname + '/public'));
 
 // app.use('/', (req, res) => res.render('./public/index'));
@@ -31,15 +31,17 @@ app.post('/api/users/register', async (req, res) => {
 
 	if (!req.body.user_id || !req.body.email || !req.body.password_hash) res.sendStatus(400);
 
-	const count = await userDB.query(`SELECT COUNT(1) AS count FROM users WHERE email = "${req.body.email}";`);
+	const count = await sessionDB.query(`SELECT COUNT(1) AS count FROM users WHERE email = "${req.body.email}";`);
+	console.log(count[0].count)
 	if (count[0].count > 0) return res.json({ error: 'EMAIL ALREADY IN USE' }).status(422);
-
-	await userDB.query(`INSERT INTO users VALUES ("${req.body.user_id}", "${req.body.email}", "${req.body.password_hash}");`)
+console.log('before query')
+	await sessionDB.query(`INSERT INTO users VALUES ("${req.body.user_id}", "${req.body.email}", "${req.body.password_hash}");`)
 		.catch(res.send);
-
+console.log('after query')
 	const payload = { user_id: req.body.user_id }
 	jwt.sign(payload, process.env.JWTSECRET, { expiresIn: 60 * 60 },
 		(e, token) => {
+			console.log('jwt callback')
 			if (e) throw e;
 			res.status(200).json({ token, ...payload });
 		}
@@ -50,21 +52,21 @@ app.post('/api/users/register', async (req, res) => {
 app.post('/api/profiles/register', async (req, res) => {
 	if (!req.body.user_id || !req.body.firstName || !req.body.lastName) return res.sendStatus(400);
 
-	await userDB.query(`INSERT INTO profiles VALUES ("${req.body.user_id}", "${req.body.firstName}", "${req.body.lastName}");`)
-		.catch(res.send);
+	await sessionDB.query(`INSERT INTO profiles VALUES ("${req.body.user_id}", "${req.body.firstName}", "${req.body.lastName}");`)
+		.catch(e => res.status(500).json(e));
 
 	res.sendStatus(200);
 });
 app.post('/api/users/login', async (req, res) => {
 
-	let rows = await userDB.query(`SELECT * FROM users WHERE email = "${req.body.email}";`).catch(console.log);
-	if (rows.length === 0) res.json({ error: "NO ACCOUNT FOUND" })
+	let rows = await sessionDB.query(`SELECT * FROM users WHERE email = "${req.body.email}";`).catch(console.log);
+	if (rows.length === 0) return res.json({ error: "NO ACCOUNT FOUND" })
 
 	let user = rows[0];
 	if (user.password_hash == req.body.password_hash) {
-		let rows_profiles = await userDB.query(`SELECT * FROM profiles WHERE id = "${user.id}";`).catch(console.log);
-		let user_search_history = await userDB.query(`SELECT * FROM profiles_search_history WHERE id = "${user.id}";`).catch(console.log);
-		let user_building_saves = await userDB.query(`SELECT * FROM profiles_building_saves WHERE user_id = "${user.id}";`).catch(console.log);
+		let rows_profiles = await sessionDB.query(`SELECT * FROM profiles WHERE id = "${user.id}";`).catch(console.log);
+		let user_search_history = await sessionDB.query(`SELECT * FROM profiles_search_history WHERE id = "${user.id}";`).catch(console.log);
+		let user_building_saves = await sessionDB.query(`SELECT * FROM profiles_building_saves WHERE user_id = "${user.id}";`).catch(console.log);
 		user = rows_profiles[0];
 
 		const payload = { user_id: user.id }
@@ -88,17 +90,23 @@ app.put('/api/users/edit', auth, async (req, res) => {
 
 	edits = [];
 	for (const change in req.body.changes) {
-		edits.push(`${change} = ${req.body.changes[change]}`);
+		if (!['email', 'password_hash'].some(changable => change == changable)) continue;
+		if (change == 'email') {
+			const count = await sessionDB.query(`SELECT COUNT(1) AS count FROM users WHERE email = "${req.body.changes[change]}";`);
+			if (count[0].count > 0) return res.status(409).json({ error: "EMAIL ALREADY REGISTERED" });
+		}
+		edits.push(`${change} = "${req.body.changes[change]}"`);
 	}
-	await userDB.query(`UPDATE users SET ${edits.join(', ')} WHERE id = "${req.body.id}";`);
+	await sessionDB.query(`UPDATE users SET ${edits.join(', ')} WHERE id = "${req.user.user_id}";`);
 	res.sendStatus(200);
 });
 app.put('/api/profiles/edit', auth, async (req, res) => {
 	edits = [];
 	for (const change in req.body.changes) {
-		edits.push(`${change} = ${req.body.changes[change]}`);
+
+		edits.push(`${change} = "${req.body.changes[change]}"`);
 	}
-	await userDB.query(`UPDATE profiles SET ${edits.join(', ')} WHERE id = "${req.body.id}";`);
+	await sessionDB.query(`UPDATE profiles SET ${edits.join(', ')} WHERE id = "${req.user.user_id}";`);
 	res.sendStatus(200);
 });
 
@@ -109,7 +117,7 @@ app.post('/api/profiles/save/building', auth, async (req, res) => {
 	const token = req.header('x-auth-token');
 	const data = jwt.verify(token, process.env.JWTSECRET);
 
-	await userDB.query(`INSERT INTO profiles_building_saves VALUES ("${data.payload.id}", ${data.building.latitude}, ${data.building.longitude}, "${req.body.building.address}");`).catch(console.log);
+	await sessionDB.query(`INSERT INTO profiles_building_saves VALUES ("${data.payload.id}", ${data.building.latitude}, ${data.building.longitude}, "${req.body.building.address}");`).catch(console.log);
 });
 app.post('/api/profiles/unsave/building', auth, async (req, res) => {
 	if (!req.body.building) return res.sendStatus(400);
@@ -117,7 +125,7 @@ app.post('/api/profiles/unsave/building', auth, async (req, res) => {
 	const token = req.header('x-auth-token');
 	const data = jwt.verify(token, process.env.JWTSECRET);
 
-	await userDB.query(`INSERT INTO profiles_building_saves VALUES ("${data.payload.id}", ${data.building.latitude}, ${data.building.longitude}, "${req.body.building.address}");`).catch(console.log);
+	await sessionDB.query(`INSERT INTO profiles_building_saves VALUES ("${data.payload.id}", ${data.building.latitude}, ${data.building.longitude}, "${req.body.building.address}");`).catch(console.log);
 });
 
 // CAMERA FEATURES
@@ -143,7 +151,7 @@ app.post('/api/search', async (req, res, next) => {
 	const token = req.header('x-auth-token');
 	const data = jwt.verify(token, process.env.JWTSECRET);
 	console.log('payload: ' + data.payload);
-	await userDB.query(`INSERT INTO sessions_search_history VALUES ("${data.payload.id}", "${data.payload.searchTerm}");`);
+	await sessionDB.query(`INSERT INTO sessions_search_history VALUES ("${data.payload.id}", "${data.payload.searchTerm}");`);
 });
 app.get('/api/building/get', async (req, res, next) => {
 
