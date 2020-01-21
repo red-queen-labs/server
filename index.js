@@ -20,6 +20,7 @@ app.use(async (req, res, next) => {
 	newServerLog(`${req.method} on ${req.url} - ${new Date()}`);
 	next();
 });
+app.use('/', (req, res) => res.sendStatus(200));
 // app.use(express.static(__dirname + '/public'));
 
 // app.use('/', (req, res) => res.render('./public/index'));
