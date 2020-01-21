@@ -12,8 +12,8 @@ require('dotenv').config();
 
 const app = express();
 
-let userDB = new DatabaseManager('sessions');
-let pipelineDB = new DatabaseManager('pipeline');
+let userDB = new DatabaseManager(process.env.DBUSERS);
+let pipelineDB = new DatabaseManager(process.env.DBPIPELINE);
 
 app.use(express.json({ extended: true }));
 app.use(async (req, res, next) => {
