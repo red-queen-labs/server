@@ -151,6 +151,7 @@ app.post('/api/building/save', async (req, res, next) => {
 	for (const building of req.body.buildings) {
 		saveBuildingToDB(building);
 	}
+	res.sendStatus(200);
 });
 
 // Test/Dev route for hand-picked data (not returned by the pipeline)
@@ -174,19 +175,22 @@ const saveBuildingToDB = async (buildingStruct) => {
 	const building_id = buildingStruct.id == null ? uuid.v4() : buildingStruct.id;
 
 	pipelineDB.query(`INSERT INTO building VALUES ("${building_id}", "${buildingStruct.address}", ${buildingStruct.lat}, ${buildingStruct.lon}, "${buildingStruct.website}", "${buildingStruct.description}", "${buildingStruct.amenities}");`).catch(console.log);
-	for (const url of buildingStruct.photos) {
-		if (!url) continue;
-		pipelineDB.query(`INSERT INTO building_photos VALUES ("${building_id}", "${url}");`).catch(console.log);
-	}
-	
+	if (buildingStruct.photos && buildingStruct.photos.length > 0)
+		for (const url of buildingStruct.photos) {
+			if (!url) continue;
+			pipelineDB.query(`INSERT INTO building_photos VALUES ("${building_id}", "${url}");`).catch(console.log);
+		}
+
 	for (const unit of buildingStruct.units) {
 		if (!unit) continue;
 		pipelineDB.query(`INSERT INTO unit VALUES ("${building_id}", "${unit.apn}", ${unit.roomNum}, ${unit.sqrFt}, ${unit.rent}, "${unit.website}", ${unit.bathrooms}, ${unit.bedrooms});`).catch(console.log);
-		for (const url of unit.photos) {
-			if (!url) continue;
-			pipelineDB.query(`INSERT INTO unit_photos VALUES ("${unit.apn}", "${url}")`).catch(console.log);
-		}
+		if (unit.photos && unit.photos.length > 0)
+			for (const url of unit.photos) {
+				if (!url) continue;
+				pipelineDB.query(`INSERT INTO unit_photos VALUES ("${unit.apn}", "${url}")`).catch(console.log);
+			}
 	}
+	return;
 };
 
 async function authUser (req, res, next) {
