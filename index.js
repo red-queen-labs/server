@@ -24,7 +24,7 @@ app.get('/', (req, res) => res.sendStatus(200));
 
 // app.use('/', (req, res) => res.render('./public/index'));
 
-// USERS
+// FRONT-END
 // Expected body: {email, password_hash, firstName, last_name}
 app.post('/api/users/register', async (req, res) => {
 
@@ -42,12 +42,20 @@ app.post('/api/users/register', async (req, res) => {
 	jwt.sign(payload, process.env.JWTSECRET, { expiresIn: 60 * 60 },
 		(e, token) => {
 			if (e) throw e;
-			res.status(200).json({ token, ...payload });
+			res.status(200).json({
+				token,
+				...payload,
+				first_name: req.body.first_name,
+				last_name: req.body.last_name,
+				search_history: [],
+				building_saves: []
+			});
 		}
 	);
 
 	newServerLog(`Registered new user: ${req.body.user_id}, ${req.body.first_name} ${req.body.last_name}, ${req.body.email}`)
 });
+
 app.post('/api/users/login', async (req, res) => {
 
 	let rows = await sessionDB.query(`SELECT * FROM users WHERE email = "${req.body.email}";`).catch(console.log);
@@ -80,6 +88,7 @@ app.post('/api/users/logout', authUser, async (req, res) => {
 	const token = req.header('x-auth-token');
 	await sessionDB.query(`INSERT INTO blocked_tokens VALUES ("${req.user.user_id}", "${token}");`);
 });
+
 app.put('/api/users/edit', authUser, async (req, res) => {
 
 	edits = [];
@@ -104,16 +113,64 @@ app.put('/api/profiles/edit', authUser, async (req, res) => {
 	res.sendStatus(200);
 });
 
-// BUILDING/UNIT
 app.post('/api/profiles/save/building', authUser, async (req, res) => {
 	if (!req.body.building) return res.sendStatus(400);
 
-	await sessionDB.query(`INSERT INTO profiles_building_saves VALUES ("${req.body.payload.id}", "${req.body.building.address}");`).catch(console.log);
+	try {
+		await sessionDB.query(`INSERT INTO profiles_building_saves VALUES ("${req.user.user_id}", "${req.body.building.id}");`);
+		res.sendStatus(200);
+	} catch (e) { res.status(400).json({ error: "BUILDING ALREADY SAVED" }); }
 });
 app.post('/api/profiles/remove/building', authUser, async (req, res) => {
 	if (!req.body.building) return res.sendStatus(400);
 
-	await sessionDB.query(`INSERT INTO profiles_building_saves VALUES ("${req.body.payload.id}", "${req.body.building.address}");`).catch(console.log);
+	try {
+		await sessionDB.query(`DELETE FROM profiles_building_saves WHERE user_id = "${req.user.user_id}" AND building_id = "${req.body.building.id}";`);
+		res.sendStatus(200);
+	} catch (e) { res.status(400).json({ error: "BUILDING ALREADY SAVED" }); }
+});
+
+// Expects: {body: {city|zipcode}}
+app.post('/api/building/search_in_region', async (req, res, next) => {
+	
+	// Check DB for matching buildings
+	let results = [];
+	let building_rows = await pipelineDB.query(`SELECT * FROM buildings WHERE address LIKE "%${req.body.searchTerm}%";`);
+	
+	for (const building of building_rows) {
+		building.photos = (await pipelineDB.query(`SELECT * FROM building_photos WHERE building_id = "${building.id}";`)).map(photo => photo.url);
+		building.units = await pipelineDB.query(`SELECT * FROM units WHERE building_id = "${building.id}";`);
+		for (const unit of building.units)
+			unit.photos = (await pipelineDB.query(`SELECT * FROM unit_photos WHERE apn = "${unit.apn}";`)).map(photo => photo.url);
+		results.push(building);
+	}
+	// Send search info data to scraper
+
+	// Concat search results from scraper to any in the DB
+
+	// Save results to db
+
+	// Send results to front end
+	res.status(200).json(results);
+
+	// Verify to continue
+	const user = await verifyToken(req, res, next);
+	if (!user) return;
+
+	// Save search history
+	await sessionDB.query(`INSERT INTO sessions_search_history VALUES ("${user.user_id}", "${req.body.searchTerm}");`);
+});
+app.post('/api/building/get', async (req, res, next) => {
+
+	const rows = await pipelineDB.query(`SELECT 15 FROM buildings LEFT JOIN units;`)
+	// PARSE DATA
+	res.json();
+});
+app.post('/api/building/save', async (req, res, next) => {
+	for (const building of req.body.buildings) {
+		saveBuildingToDB(building);
+	}
+	res.sendStatus(200);
 });
 
 // CAMERA FEATURES
@@ -124,37 +181,6 @@ app.post('/api/img-lookup', async (req, res) => {
 	res.sendStatus(200);
 	//get housing info from the db and send back
 });
-
-// Expects: {body: {city|zipcode}}
-app.post('/api/search', async (req, res, next) => {
-	// Send search info data to scraper
-	// Save results to db
-	// Send results to front end
-	res.json().status(200)
-
-	// Authenticate
-	authUser(req, res, next);
-
-	// Save search history
-	const token = req.header('x-auth-token');
-	const data = jwt.verify(token, process.env.JWTSECRET);
-	console.log('payload: ' + data.payload);
-	await sessionDB.query(`INSERT INTO sessions_search_history VALUES ("${data.payload.id}", "${data.payload.searchTerm}");`);
-});
-app.get('/api/building/get', async (req, res, next) => {
-
-	const rows = await pipelineDB.query(`SELECT 15 FROM building LEFT JOIN units;`)
-	// PARSE DATA
-	res.json([]);
-});
-app.post('/api/building/save', async (req, res, next) => {
-	for (const building of req.body.buildings) {
-		saveBuildingToDB(building);
-	}
-	res.sendStatus(200);
-});
-
-// Test/Dev route for hand-picked data (not returned by the pipeline)
 
 // TBD
 // app.get('/api/searchHistory', auth, async (req, res) => { 
@@ -174,7 +200,7 @@ const saveBuildingToDB = async (buildingStruct) => {
 	if (!buildingStruct) return;
 	const building_id = buildingStruct.id == null ? uuid.v4() : buildingStruct.id;
 
-	pipelineDB.query(`INSERT INTO building VALUES ("${building_id}", "${buildingStruct.address}", ${buildingStruct.lat}, ${buildingStruct.lon}, "${buildingStruct.website}", "${buildingStruct.description}", "${buildingStruct.amenities}");`).catch(console.log);
+	pipelineDB.query(`INSERT INTO buildings VALUES ("${building_id}", "${buildingStruct.address}", ${buildingStruct.lat}, ${buildingStruct.lon}, "${buildingStruct.website}", "${buildingStruct.description}", "${buildingStruct.amenities}");`).catch(console.log);
 	if (buildingStruct.photos && buildingStruct.photos.length > 0)
 		for (const url of buildingStruct.photos) {
 			if (!url) continue;
@@ -183,7 +209,7 @@ const saveBuildingToDB = async (buildingStruct) => {
 
 	for (const unit of buildingStruct.units) {
 		if (!unit) continue;
-		pipelineDB.query(`INSERT INTO unit VALUES ("${building_id}", "${unit.apn}", ${unit.roomNum}, ${unit.sqrFt}, ${unit.rent}, "${unit.website}", ${unit.bathrooms}, ${unit.bedrooms});`).catch(console.log);
+		pipelineDB.query(`INSERT INTO units VALUES ("${building_id}", "${unit.apn}", ${unit.roomNum}, ${unit.sqrFt}, ${unit.rent}, "${unit.website}", ${unit.bathrooms}, ${unit.bedrooms});`).catch(console.log);
 		if (unit.photos && unit.photos.length > 0)
 			for (const url of unit.photos) {
 				if (!url) continue;
@@ -194,23 +220,28 @@ const saveBuildingToDB = async (buildingStruct) => {
 };
 
 async function authUser (req, res, next) {
-	// Get token form header
+	// Get token from header
 	const token = req.header('x-auth-token');
 
 	// Check if no token exists
-	if (!token) {
-		return res.status(401).json({ error: 'NO TOKEN FOUND' });
-	}
+	if (!token) return res.status(401).json({ error: 'NO TOKEN FOUND' });
 
-	// Verify token
+	// Verify
+	const user = await verifyToken(token)
+	if (user) {
+		req.user = user;
+		next();
+	}
+	else res.status(401).json({ error: 'INVALID TOKEN' });
+}
+async function verifyToken (token) {
 	try {
 		const decoded = jwt.verify(token, process.env.JWTSECRET);
-		const data = await sessionDB.query(`SELECT COUNT(1) AS count blocked_tokens WHERE token = "${token}";`)
+		const data = await sessionDB.query(`SELECT COUNT(1) AS count FROM blocked_tokens WHERE jwt_token = "${token}";`).catch(new Error());
 		if (data[0].count > 0) throw new Error();
-		req.user = decoded;
-		next();
+		return decoded;
 	} catch (err) {
-		res.status(401).json({ error: 'INVALID TOKEN' });
+		return undefined;
 	}
 }
 
